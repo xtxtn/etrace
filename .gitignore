@@ -1,0 +1,4 @@
+/bin/
+/test/
+mini_etrace
+mini_etrace.bpf.o
