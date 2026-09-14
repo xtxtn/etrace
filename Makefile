@@ -53,7 +53,8 @@ USER_CFLAGS := \
 STATIC_LIBS := \
 	$(ELIB_LIB)/libbpf.a \
 	$(ELIB_LIB)/libelf.a \
-	$(ELIB_LIB)/libz.a
+	$(ELIB_LIB)/libz.a \
+	$(ELIB_LIB)/libblazesym_c.a
 
 
 USER_LDFLAGS := \
@@ -84,7 +85,7 @@ $(TARGET): mini_etrace.c mini_etrace.h
 	$(STRIP) $(TARGET)
 
 
-install: 
+install:
 	$(ADB_CMD) push $(BPF_OBJ) $(DST)
 	$(ADB_CMD) push $(TARGET) $(DST)
 

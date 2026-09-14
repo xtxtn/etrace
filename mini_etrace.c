@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <assert.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,7 @@
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
-
+#include "blazesym.h"
 #include "mini_etrace.h"
 
 
@@ -56,6 +57,76 @@ static int bump_memlock_rlimit(void)
                      &rlim);
 }
 
+static struct blaze_symbolizer *symbolizer;
+
+static void print_frame(const char *name, uintptr_t input_addr, uintptr_t addr, uint64_t offset, const blaze_symbolize_code_info* code_info)
+{
+	/* If we have an input address  we have a new symbol. */
+	if (input_addr != 0) {
+		printf("%016lx: %s @ 0x%lx+0x%lx", input_addr, name, addr, offset);
+		if (code_info != NULL && code_info->dir != NULL && code_info->file != NULL) {
+			printf(" %s/%s:%u\n", code_info->dir, code_info->file, code_info->line);
+		} else if (code_info != NULL && code_info->file != NULL) {
+			printf(" %s:%u\n", code_info->file, code_info->line);
+		} else {
+			printf("\n");
+		}
+	} else {
+		printf("%16s  %s", "", name);
+		if (code_info != NULL && code_info->dir != NULL && code_info->file != NULL) {
+			printf("@ %s/%s:%u [inlined]\n", code_info->dir, code_info->file, code_info->line);
+		} else if (code_info != NULL && code_info->file != NULL) {
+			printf("@ %s:%u [inlined]\n", code_info->file, code_info->line);
+		} else {
+			printf("[inlined]\n");
+		}
+	}
+}
+
+static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
+{
+	const struct blaze_symbolize_inlined_fn* inlined;
+	const struct blaze_syms *syms;
+	const struct blaze_sym *sym;
+	int i, j;
+
+	assert(sizeof(uintptr_t) == sizeof(uint64_t));
+
+	if (pid) {
+		struct blaze_symbolize_src_process src = {
+			.type_size = sizeof(src),
+			.pid = pid,
+			.debug_syms = true,
+		};
+
+		syms = blaze_symbolize_process_abs_addrs(symbolizer, &src,
+		                                (const uintptr_t *)stack, stack_sz);
+	}
+
+	if (!syms) {
+		printf("  failed to symbolize addresses: %s\n",
+		        blaze_err_str(blaze_err_last()));
+		return;
+	}
+
+	for (i = 0; i < stack_sz; i++) {
+		if (!syms || syms->cnt <= i || syms->syms[i].name == NULL) {
+			printf("%016llx: <no-symbol>\n", stack[i]);
+			continue;
+		}
+
+		sym = &syms->syms[i];
+		print_frame(sym->name, stack[i], sym->addr, sym->offset, &sym->code_info);
+
+		for (j = 0; j < sym->inlined_cnt; j++) {
+			inlined = &sym->inlined[j];
+			print_frame(inlined->name, 0, 0, 0, &inlined->code_info);
+		}
+	}
+
+	blaze_syms_free(syms);
+}
+
 
 /*
  * syscall number -> ARM64 syscall name
@@ -86,20 +157,6 @@ static const char *syscall_name(int nr)
         return name + 11;
 
     return name;
-}
-
-static void print_return_value(long long ret)
-{
-    if (ret < 0 &&
-        ret >= -4095) {
-
-        int err = (int)-ret;
-        printf(" = -1 errno=%d (%s)",
-               err,
-               strerror(err));
-    } else {
-        printf(" = 0x%llx\n", ret);
-    }
 }
 
 static int syscall_filter_add(int map_fd, int syscall_id)
@@ -232,6 +289,20 @@ static int parse_syscall_filter(int map_fd, const char *arg)
     return 0;
 }
 
+static void print_return_value(long long ret)
+{
+    if (ret < 0 &&
+        ret >= -4095) {
+
+        int err = (int)-ret;
+        printf(" = -1 errno=%d (%s)",
+               err,
+               strerror(err));
+    } else {
+        printf(" = 0x%llx\n", ret);
+    }
+}
+
 static void handle_event(void *ctx,
                          int cpu,
                          void *data,
@@ -274,11 +345,17 @@ static void handle_event(void *ctx,
            (unsigned long long)e->args[5]);
 
     print_return_value((long long)e->ret);
-    puts("stack:");
-    int nr_frames = e->stack_size / sizeof(__u64);
-    for (int i = 0; i < nr_frames; i++) {
-        printf("    0x%llx\n", e->user_stack[i]);
-    }
+    // puts("stack:");
+    // int nr_frames = e->stack_size / sizeof(__u64);
+    // for (int i = 0; i < nr_frames; i++) {
+    //     printf("    0x%llx\n", e->user_stack[i]);
+    // }
+    if (e->stack_size > 0) {
+		printf("Userspace Stack:\n");
+		show_stack_trace(e->user_stack, e->stack_size / sizeof(__u64), e->pid);
+	} else {
+		printf("No Userspace Stack\n");
+	}
 
 
     fflush(stdout);
@@ -320,11 +397,12 @@ static void usage(const char *prog)
             "Options:\n"
             "  -p <pid>   trace process by PID/TGID\n"
             "  -c <comm>  trace process by task comm\n"
+            "  -e <syscall0>,<syscall1>  trace only specified syscalls\n"
             "  -h         show this help\n"
             "\n"
             "Examples:\n"
             "  %s -p 1234\n"
-            "  %s -c nginx\n",
+            "  %s -c nginx -e read,write\n",
             prog,
             prog,
             prog,
@@ -398,13 +476,15 @@ int main(int argc, char **argv)
                         "than %d characters; truncated\n",
                         optarg,
                         COMM_LEN - 1);
-
-                strncpy(config.target_comm,
-                        optarg + strlen(optarg) - (COMM_LEN - 1),
-                        COMM_LEN - 1);
+                if (!strncmp(optarg, "com.", 4))
+                    strncpy(config.target_comm,
+                            optarg + strlen(optarg) - (COMM_LEN - 1),
+                            COMM_LEN - 1);
+                else
+                    strncpy(config.target_comm, optarg, COMM_LEN - 1);
             }
             else {
-                strncpy(config.target_comm, optarg, COMM_LEN - 1);
+                strcpy(config.target_comm, optarg);
             }
 
             have_comm = true;
@@ -565,6 +645,14 @@ int main(int argc, char **argv)
         err = events_fd;
         goto cleanup;
     }
+
+    symbolizer = blaze_symbolizer_new();
+	if (!symbolizer) {
+		fprintf(stderr, "Fail to create a symbolizer\n");
+		err = -1;
+		goto cleanup;
+	}
+
     /*
      * libbpf 0.5 API。
      */
