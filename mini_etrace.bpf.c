@@ -144,7 +144,6 @@ int trace_enter(struct sys_enter_ctx *ctx)
 
     char comm[COMM_LEN] = {};
 
-
     cfg = bpf_map_lookup_elem(&config_map, &key);
     if (!cfg)
         return 0;

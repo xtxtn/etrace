@@ -13,6 +13,7 @@
 #define FILTER_PID  1
 #define FILTER_COMM 2
 #define FILTER_SYS  1
+#define FILTER_STACK 1
 
 #define MAX_STACK_DEPTH 64
 

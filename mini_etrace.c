@@ -18,6 +18,7 @@
 #include "blazesym.h"
 #include "mini_etrace.h"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 /*
  * ARM64 syscall table。
@@ -25,18 +26,15 @@
  * 当前版本只支持 ARM64 syscall 名称解析
  * ARM32 compat 后续再加入
  */
-#ifdef __SYSCALL
-#undef __SYSCALL
-#endif
-
-#define __SYSCALL(nr, sym) [nr] = #sym,
-
-static const char *syscall_names[] = {
-#include <asm/unistd.h>
+static const char *syscall_tables_64[] = {
+#include "syscall_64.inc"
 };
 
-#undef __SYSCALL
+static const char *syscall_tables_32[] = {
+#include "syscall_32.inc"
+};
 
+bool enable_32;
 
 static volatile sig_atomic_t exiting;
 
@@ -96,7 +94,6 @@ static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
 		struct blaze_symbolize_src_process src = {
 			.type_size = sizeof(src),
 			.pid = pid,
-			.debug_syms = true,
 		};
 
 		syms = blaze_symbolize_process_abs_addrs(symbolizer, &src,
@@ -106,6 +103,8 @@ static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
 	if (!syms) {
 		printf("  failed to symbolize addresses: %s\n",
 		        blaze_err_str(blaze_err_last()));
+		for (i = 0; i < stack_sz; i++)
+			printf("%016llx\n", (unsigned long long)stack[i]);
 		return;
 	}
 
@@ -129,32 +128,22 @@ static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
 
 
 /*
- * syscall number -> ARM64 syscall name
+ * syscall number -> syscall name
  */
-static const char *syscall_name(int nr)
+static const char *syscall_name(int nr, const char *syscall_tables[], size_t count)
 {
     const char *name;
 
     if (nr < 0)
         return NULL;
 
-    if ((size_t)nr >=
-        sizeof(syscall_names) / sizeof(syscall_names[0]))
+    if ((size_t)nr >= count)
         return NULL;
 
-    name = syscall_names[nr];
+    name = syscall_tables[nr];
 
     if (!name)
         return NULL;
-
-    /*
-     * "sys_read" -> "read"
-     */
-    if (!strncmp(name, "sys_", 4))
-        return name + 4;
-
-    if (!strncmp(name, "compat_sys_", 11))
-        return name + 11;
 
     return name;
 }
@@ -194,19 +183,18 @@ static int set_all_syscall(int map_fd){
     return 0;
 }
 
-static int syscall_number(const char *name)
+
+/*
+ * syscall name -> syscall number
+*/
+static int syscall_number(const char *name, const char* syscall_tables[], size_t count)
 {
     size_t i;
-    for (i = 0;
-         i < sizeof(syscall_names) / sizeof(syscall_names[0]);
-         i++) {
-        const char *n = syscall_names[i];
+    for (i = 0; i < count; i++) {
+        const char *n = syscall_tables[i];
 
         if (!n)
             continue;
-
-        if (!strncmp(n, "sys_", 4))
-            n += 4;
 
         if (!strcmp(n, name))
             return (int)i;
@@ -253,7 +241,12 @@ static int parse_syscall_filter(int map_fd, const char *arg)
             continue;
         }
 
-        nr = syscall_number(token);
+        if (enable_32)
+            nr = syscall_number(token,
+                syscall_tables_32, ARRAY_SIZE(syscall_tables_32));
+        else
+            nr = syscall_number(token,
+                syscall_tables_64, ARRAY_SIZE(syscall_tables_64));
 
         if (nr < 0) {
             fprintf(stderr,
@@ -316,8 +309,12 @@ static void handle_event(void *ctx,
 
     if (data_sz < sizeof(*e))
         return;
-
-    name = syscall_name(e->syscall_id);
+    if (enable_32)
+        name = syscall_name(e->syscall_id,
+            syscall_tables_32, ARRAY_SIZE(syscall_tables_32));
+    else
+        name = syscall_name(e->syscall_id,
+            syscall_tables_64, ARRAY_SIZE(syscall_tables_64));
 
     if (e->pid != e->tid) {
         printf("[%u:%u] ",e->pid, e->tid);
@@ -438,7 +435,7 @@ int main(int argc, char **argv)
     int opt;
     int err = 0;
 
-    while ((opt = getopt(argc, argv, "p:c:e:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:c:e:t:h")) != -1) {
         switch (opt) {
         case 'p': {
             char *end = NULL;
@@ -493,6 +490,11 @@ int main(int argc, char **argv)
         case 'e':
             config.syscall_filter_enabled = FILTER_SYS;
             syscall_filter_arg = optarg;
+            break;
+
+        case 't':
+            if (!strncmp(optarg, "32", 2))
+                enable_32 = 1;
             break;
 
         case 'h':
