@@ -113,28 +113,6 @@ static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
 	blaze_syms_free(syms);
 }
 
-
-/*
- * syscall number -> syscall name
- */
-static const char *syscall_name(int nr, const char *syscall_tables[], size_t count)
-{
-    const char *name;
-
-    if (nr < 0)
-        return NULL;
-
-    if ((size_t)nr >= count)
-        return NULL;
-
-    name = syscall_tables[nr];
-
-    if (!name)
-        return NULL;
-
-    return name;
-}
-
 static int syscall_filter_add(int map_fd, int syscall_id)
 {
     __u32 key;
@@ -174,11 +152,11 @@ static int set_all_syscall(int map_fd){
 /*
  * syscall name -> syscall number
 */
-static int syscall_number(const char *name, const char* syscall_tables[], size_t count)
+static int syscall_number(const char *name, const syscall_entry_t table[SYSCALL_TABLE_SIZE])
 {
     size_t i;
-    for (i = 0; i < count; i++) {
-        const char *n = syscall_tables[i];
+    for (i = 0; i < SYSCALL_TABLE_SIZE; i++) {
+        const char *n = table[i].name;
 
         if (!n)
             continue;
@@ -229,11 +207,9 @@ static int parse_syscall_filter(int map_fd, const char *arg)
         }
 
         if (enable_32)
-            nr = syscall_number(token,
-                syscall_tables_32, ARRAY_SIZE(syscall_tables_32));
+            nr = syscall_number(token, syscall_tables_32);
         else
-            nr = syscall_number(token,
-                syscall_tables_64, ARRAY_SIZE(syscall_tables_64));
+            nr = syscall_number(token, syscall_tables_64);
 
         if (nr < 0) {
             fprintf(stderr,
@@ -269,20 +245,7 @@ static int parse_syscall_filter(int map_fd, const char *arg)
     return 0;
 }
 
-static void print_return_value(long long ret)
-{
-    if (ret < 0 &&
-        ret >= -4095) {
-
-        int err = (int)-ret;
-        printf(" = -1 errno=%d (%s)",
-               err,
-               strerror(err));
-    } else {
-        printf(" = 0x%llx\n", ret);
-    }
-}
-char line[4096];
+char line[1024];
 syscall_parser_t *parser;
 static void handle_event(void *ctx,
                          int cpu,
@@ -296,42 +259,14 @@ static void handle_event(void *ctx,
 
     if (data_sz < sizeof(*e))
         return;
-    // if (enable_32)
-    //     name = syscall_name(e->syscall_id,
-    //         syscall_tables_32, ARRAY_SIZE(syscall_tables_32));
-    // else
-    //     name = syscall_name(e->syscall_id,
-    //         syscall_tables_64, ARRAY_SIZE(syscall_tables_64));
 
-    // if (e->pid != e->tid) {
-    //     printf("[%u:%u] ",e->pid, e->tid);
-    // } else {
-    //     printf("[%u] ", e->pid);
-    // }
-
-    // if (name) {
-    //     printf("%s(", name);
-    // } else {
-    //     printf("syscall_%d(",e->syscall_id);
-    // }
-
-    // printf("0x%llx, "
-    //        "0x%llx, "
-    //        "0x%llx, "
-    //        "0x%llx, "
-    //        "0x%llx, "
-    //        "0x%llx)",
-    //        (unsigned long long)e->args[0],
-    //        (unsigned long long)e->args[1],
-    //        (unsigned long long)e->args[2],
-    //        (unsigned long long)e->args[3],
-    //        (unsigned long long)e->args[4],
-    //        (unsigned long long)e->args[5]);
-
-    // print_return_value((long long)e->ret);
     memset(line, 0, sizeof(line));
 
-    syscall_parse_event(parser, e, syscall_tables_64, line, sizeof(line));
+    if (enable_32)
+        syscall_parse_event(parser, e, syscall_tables_32, line, sizeof(line));
+    else
+        syscall_parse_event(parser, e, syscall_tables_64, line, sizeof(line));
+
     puts(line);
     // puts("stack:");
     // int nr_frames = e->stack_size / sizeof(__u64);
@@ -344,8 +279,6 @@ static void handle_event(void *ctx,
 	// } else {
 	// 	printf("No Userspace Stack\n");
 	// }
-
-
     fflush(stdout);
 }
 

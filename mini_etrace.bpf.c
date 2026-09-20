@@ -171,7 +171,7 @@ int trace_enter(struct sys_enter_ctx *ctx)
     if (!data)
         return 0;
 
-    // data->ts_ns = bpf_ktime_get_ns();
+    data->ts_ns = bpf_ktime_get_ns();
     data->pid = pid;
     data->tid = tid;
     data->syscall_id = (__s32)ctx->id;
@@ -215,9 +215,9 @@ int trace_exit(struct sys_exit_ctx *ctx)
     if (!event)
         return 0;
 
-    // now = bpf_ktime_get_ns();
-    // event->ts_ns = in->ts_ns;
-    // event->duration_ns = now - in->ts_ns;
+    __u64 now = bpf_ktime_get_ns();
+    event->ts_ns = in->ts_ns;
+    event->duration_ns = now - in->ts_ns;
     event->pid = in->pid;
     event->tid = in->tid;
     event->syscall_id = in->syscall_id;

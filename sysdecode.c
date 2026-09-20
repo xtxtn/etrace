@@ -475,7 +475,7 @@ print_iov(sd_decoder_t *d, const sd_event_t *ev, struct out *o,
 }
 
 enum arg_kind {
-    A_HEX, A_INT, A_UINT, A_FD, A_PID, A_PTR, A_STR, A_PATH, A_STRV,
+    A_HEX, A_INT, A_LONG, A_UINT, A_FD, A_DIRFD, A_PID, A_PTR, A_STR, A_PATH, A_STRV,
     A_SIZE, A_MODE, A_OPEN, A_PROT, A_MAP, A_SIG, A_BUF_IN, A_BUF_OUT,
     A_SOCKADDR, A_TIMESPEC, A_TIME64, A_TIMESPEC_OUT, A_TIME64_OUT,
     A_IOV_IN, A_IOV_OUT
@@ -495,32 +495,32 @@ static const struct call_desc calls[] = {
     CALL("readv",3,AD(A_FD),AL(A_IOV_OUT,2),AD(A_UINT)),
     CALL("writev",3,AD(A_FD),AL(A_IOV_IN,2),AD(A_UINT)),
     CALL("open",3,AD(A_PATH),AD(A_OPEN),AD(A_MODE)),
-    CALL("openat",4,AD(A_FD),AD(A_PATH),AD(A_OPEN),AD(A_MODE)),
+    CALL("openat",4,AD(A_DIRFD),AD(A_PATH),AD(A_OPEN),AD(A_MODE)),
     CALL("creat",2,AD(A_PATH),AD(A_MODE)),
     CALL("close",1,AD(A_FD)), CALL("dup",1,AD(A_FD)),
     CALL("dup2",2,AD(A_FD),AD(A_FD)), CALL("dup3",3,AD(A_FD),AD(A_FD),AD(A_HEX)),
-    CALL("lseek",3,AD(A_FD),AD(A_INT),AD(A_UINT)),
-    CALL("access",2,AD(A_PATH),AD(A_HEX)), CALL("faccessat",3,AD(A_FD),AD(A_PATH),AD(A_HEX)),
-    CALL("faccessat2",4,AD(A_FD),AD(A_PATH),AD(A_HEX),AD(A_HEX)),
+    CALL("lseek",3,AD(A_FD),AD(A_LONG),AD(A_UINT)),
+    CALL("access",2,AD(A_PATH),AD(A_HEX)), CALL("faccessat",3,AD(A_DIRFD),AD(A_PATH),AD(A_HEX)),
+    CALL("faccessat2",4,AD(A_DIRFD),AD(A_PATH),AD(A_HEX),AD(A_HEX)),
     CALL("chdir",1,AD(A_PATH)), CALL("chroot",1,AD(A_PATH)), CALL("fchdir",1,AD(A_FD)),
-    CALL("mkdir",2,AD(A_PATH),AD(A_MODE)), CALL("mkdirat",3,AD(A_FD),AD(A_PATH),AD(A_MODE)),
+    CALL("mkdir",2,AD(A_PATH),AD(A_MODE)), CALL("mkdirat",3,AD(A_DIRFD),AD(A_PATH),AD(A_MODE)),
     CALL("rmdir",1,AD(A_PATH)), CALL("unlink",1,AD(A_PATH)),
-    CALL("unlinkat",3,AD(A_FD),AD(A_PATH),AD(A_HEX)),
+    CALL("unlinkat",3,AD(A_DIRFD),AD(A_PATH),AD(A_HEX)),
     CALL("rename",2,AD(A_PATH),AD(A_PATH)),
-    CALL("renameat",4,AD(A_FD),AD(A_PATH),AD(A_FD),AD(A_PATH)),
-    CALL("renameat2",5,AD(A_FD),AD(A_PATH),AD(A_FD),AD(A_PATH),AD(A_HEX)),
+    CALL("renameat",4,AD(A_DIRFD),AD(A_PATH),AD(A_DIRFD),AD(A_PATH)),
+    CALL("renameat2",5,AD(A_DIRFD),AD(A_PATH),AD(A_DIRFD),AD(A_PATH),AD(A_HEX)),
     CALL("link",2,AD(A_PATH),AD(A_PATH)), CALL("symlink",2,AD(A_PATH),AD(A_PATH)),
     CALL("readlink",3,AD(A_PATH),AL(A_BUF_OUT,2),AD(A_SIZE)),
-    CALL("readlinkat",4,AD(A_FD),AD(A_PATH),AL(A_BUF_OUT,3),AD(A_SIZE)),
+    CALL("readlinkat",4,AD(A_DIRFD),AD(A_PATH),AL(A_BUF_OUT,3),AD(A_SIZE)),
     CALL("chmod",2,AD(A_PATH),AD(A_MODE)), CALL("fchmod",2,AD(A_FD),AD(A_MODE)),
-    CALL("fchmodat",3,AD(A_FD),AD(A_PATH),AD(A_MODE)),
+    CALL("fchmodat",3,AD(A_DIRFD),AD(A_PATH),AD(A_MODE)),
     CALL("truncate",2,AD(A_PATH),AD(A_SIZE)), CALL("ftruncate",2,AD(A_FD),AD(A_SIZE)),
     CALL("stat",2,AD(A_PATH),AD(A_PTR)), CALL("lstat",2,AD(A_PATH),AD(A_PTR)),
-    CALL("fstat",2,AD(A_FD),AD(A_PTR)), CALL("newfstatat",4,AD(A_FD),AD(A_PATH),AD(A_PTR),AD(A_HEX)),
-    CALL("statx",5,AD(A_FD),AD(A_PATH),AD(A_HEX),AD(A_HEX),AD(A_PTR)),
+    CALL("fstat",2,AD(A_FD),AD(A_PTR)), CALL("newfstatat",4,AD(A_DIRFD),AD(A_PATH),AD(A_PTR),AD(A_HEX)),
+    CALL("statx",5,AD(A_DIRFD),AD(A_PATH),AD(A_HEX),AD(A_HEX),AD(A_PTR)),
     CALL("getcwd",2,AL(A_BUF_OUT,1),AD(A_SIZE)),
     CALL("execve",3,AD(A_PATH),AD(A_STRV),AD(A_STRV)),
-    CALL("execveat",5,AD(A_FD),AD(A_PATH),AD(A_STRV),AD(A_STRV),AD(A_HEX)),
+    CALL("execveat",5,AD(A_DIRFD),AD(A_PATH),AD(A_STRV),AD(A_STRV),AD(A_HEX)),
     CALL("exit",1,AD(A_INT)), CALL("exit_group",1,AD(A_INT)),
     CALL("kill",2,AD(A_PID),AD(A_SIG)), CALL("tgkill",3,AD(A_PID),AD(A_PID),AD(A_SIG)),
     CALL("tkill",2,AD(A_PID),AD(A_SIG)), CALL("wait4",4,AD(A_PID),AD(A_PTR),AD(A_HEX),AD(A_PTR)),
@@ -582,13 +582,25 @@ buffer_count(const sd_event_t *ev, int arg_index, int output)
 }
 
 static void
+print_dirfd(struct out *o, uint64_t value, int symbolic)
+{
+    int32_t fd = (int32_t)(uint32_t)value;
+    if (symbolic && fd == AT_FDCWD)
+        out_printf(o, "AT_FDCWD");
+    else
+        out_printf(o, "%" PRId32, fd);
+}
+
+static void
 print_arg(sd_decoder_t *d, const sd_event_t *ev, struct out *o,
           struct arg_desc desc, uint64_t value, const char *call_name)
 {
     switch (desc.kind) {
-    case A_INT: out_printf(o, "%" PRId64, ev->abi == SD_ABI_ARM_EABI ? (int64_t)(int32_t)value : (int64_t)value); break;
+    case A_INT: out_printf(o, "%" PRId32, (int32_t)(uint32_t)value); break;
+    case A_LONG: out_printf(o, "%" PRId64, ev->abi == SD_ABI_ARM_EABI ? (int64_t)(int32_t)(uint32_t)value : (int64_t)value); break;
     case A_UINT: case A_SIZE: out_printf(o, "%" PRIu64, sd_normalize_arg(ev->abi, value)); break;
-    case A_FD: case A_PID: out_printf(o, "%" PRId64, ev->abi == SD_ABI_ARM_EABI ? (int64_t)(int32_t)value : (int64_t)value); break;
+    case A_FD: case A_PID: out_printf(o, "%" PRId32, (int32_t)(uint32_t)value); break;
+    case A_DIRFD: print_dirfd(o, value, d->opt.symbolic); break;
     case A_PTR: print_ptr(o, ev->abi, value); break;
     case A_STR: case A_PATH: print_cstring(d, ev, o, value); break;
     case A_STRV: print_strv(d, ev, o, value); break;
@@ -667,8 +679,8 @@ print_openat2(sd_decoder_t *d, const sd_event_t *ev, struct out *o)
     uint64_t how[3] = {0};
     size_t user_size = (size_t)sd_normalize_arg(ev->abi, ev->args[3]);
     size_t read_size = user_size < sizeof(how) ? user_size : sizeof(how);
-    out_printf(o, "%" PRId64 ", ", ev->abi == SD_ABI_ARM_EABI ?
-               (int64_t)(int32_t)ev->args[0] : (int64_t)ev->args[0]);
+    print_dirfd(o, ev->args[0], d->opt.symbolic);
+    out_printf(o, ", ");
     print_cstring(d, ev, o, ev->args[1]);
     out_printf(o, ", ");
     if (read_size >= 8 && read_mem(d, ev, ev->args[2], how, read_size) == (ssize_t)read_size) {
