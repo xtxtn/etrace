@@ -17,22 +17,9 @@
 #include <bpf/libbpf.h>
 #include "blazesym.h"
 #include "mini_etrace.h"
+#include "syscall_parser.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
-
-/*
- * ARM64 syscall table。
- *
- * 当前版本只支持 ARM64 syscall 名称解析
- * ARM32 compat 后续再加入
- */
-static const char *syscall_tables_64[] = {
-#include "syscall_64.inc"
-};
-
-static const char *syscall_tables_32[] = {
-#include "syscall_32.inc"
-};
 
 bool enable_32;
 
@@ -295,64 +282,68 @@ static void print_return_value(long long ret)
         printf(" = 0x%llx\n", ret);
     }
 }
-
+char line[4096];
+syscall_parser_t *parser;
 static void handle_event(void *ctx,
                          int cpu,
                          void *data,
                          __u32 data_sz)
 {
-    const struct syscall_event *e = data;
-    const char *name;
+    struct syscall_event *e = data;
 
     (void)ctx;
     (void)cpu;
 
     if (data_sz < sizeof(*e))
         return;
-    if (enable_32)
-        name = syscall_name(e->syscall_id,
-            syscall_tables_32, ARRAY_SIZE(syscall_tables_32));
-    else
-        name = syscall_name(e->syscall_id,
-            syscall_tables_64, ARRAY_SIZE(syscall_tables_64));
+    // if (enable_32)
+    //     name = syscall_name(e->syscall_id,
+    //         syscall_tables_32, ARRAY_SIZE(syscall_tables_32));
+    // else
+    //     name = syscall_name(e->syscall_id,
+    //         syscall_tables_64, ARRAY_SIZE(syscall_tables_64));
 
-    if (e->pid != e->tid) {
-        printf("[%u:%u] ",e->pid, e->tid);
-    } else {
-        printf("[%u] ", e->pid);
-    }
+    // if (e->pid != e->tid) {
+    //     printf("[%u:%u] ",e->pid, e->tid);
+    // } else {
+    //     printf("[%u] ", e->pid);
+    // }
 
-    if (name) {
-        printf("%s(", name);
-    } else {
-        printf("syscall_%d(",e->syscall_id);
-    }
+    // if (name) {
+    //     printf("%s(", name);
+    // } else {
+    //     printf("syscall_%d(",e->syscall_id);
+    // }
 
-    printf("0x%llx, "
-           "0x%llx, "
-           "0x%llx, "
-           "0x%llx, "
-           "0x%llx, "
-           "0x%llx)",
-           (unsigned long long)e->args[0],
-           (unsigned long long)e->args[1],
-           (unsigned long long)e->args[2],
-           (unsigned long long)e->args[3],
-           (unsigned long long)e->args[4],
-           (unsigned long long)e->args[5]);
+    // printf("0x%llx, "
+    //        "0x%llx, "
+    //        "0x%llx, "
+    //        "0x%llx, "
+    //        "0x%llx, "
+    //        "0x%llx)",
+    //        (unsigned long long)e->args[0],
+    //        (unsigned long long)e->args[1],
+    //        (unsigned long long)e->args[2],
+    //        (unsigned long long)e->args[3],
+    //        (unsigned long long)e->args[4],
+    //        (unsigned long long)e->args[5]);
 
-    print_return_value((long long)e->ret);
+    // print_return_value((long long)e->ret);
+    memset(line, 0, sizeof(line));
+
+    syscall_parse_event(parser, e, syscall_tables_64, line, sizeof(line));
+    puts(line);
     // puts("stack:");
     // int nr_frames = e->stack_size / sizeof(__u64);
     // for (int i = 0; i < nr_frames; i++) {
     //     printf("    0x%llx\n", e->user_stack[i]);
     // }
-    if (e->stack_size > 0) {
-		printf("Userspace Stack:\n");
-		show_stack_trace(e->user_stack, e->stack_size / sizeof(__u64), e->pid);
-	} else {
-		printf("No Userspace Stack\n");
-	}
+ //    if (e->stack_size > 0) {
+	// 	printf("Userspace Stack:\n");
+	// 	show_stack_trace(e->user_stack, e->stack_size / sizeof(__u64), e->pid);
+	// } else {
+	// 	printf("No Userspace Stack\n");
+	// }
 
 
     fflush(stdout);
@@ -654,6 +645,18 @@ int main(int argc, char **argv)
 		err = -1;
 		goto cleanup;
 	}
+
+    syscall_memory_reader_t reader = {
+        .read = syscall_process_vm_reader,
+        .opaque = NULL,
+    };
+    parser = calloc(1, sizeof(syscall_parser_t));
+    parser->opt.max_string = 256;
+    parser->opt.max_buffer = 64;
+    parser->opt.max_array = 16;
+    parser->opt.dereference = 1;
+    parser->opt.symbolic = 1;
+    parser->reader = reader;
 
     /*
      * libbpf 0.5 API。

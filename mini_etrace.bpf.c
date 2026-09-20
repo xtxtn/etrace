@@ -139,12 +139,11 @@ int trace_enter(struct sys_enter_ctx *ctx)
     __u32 pid;
     __u32 tid;
 
-    __u32 key = 0;
     __u32 zero = 0;
 
     char comm[COMM_LEN] = {};
 
-    cfg = bpf_map_lookup_elem(&config_map, &key);
+    cfg = bpf_map_lookup_elem(&config_map, &zero);
     if (!cfg)
         return 0;
 

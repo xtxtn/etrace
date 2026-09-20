@@ -18,6 +18,7 @@ ELIB_ROOT := $(HOME)/elib/aarch64-elib
 ELIB_INC  := $(ELIB_ROOT)/include
 ELIB_LIB  := $(ELIB_ROOT)/lib
 
+LOCAL_INC := include
 
 # ARM64 toolchain information
 SYSROOT := $(shell $(CC) -print-sysroot)
@@ -26,7 +27,7 @@ GCC_INCLUDE := $(shell $(CC) -print-file-name=include)
 
 BPF_SYS_INCLUDES := \
 	-I$(ELIB_INC) \
-	-I$(SYSROOT)/usr/include \
+	-I$(LOCAL_INC) \
 	-I/usr/$(MULTIARCH)/include
 
 
@@ -47,7 +48,8 @@ USER_CFLAGS := \
 	-g \
 	-Wall \
 	-Wextra \
-	-I$(ELIB_INC)
+	-I$(ELIB_INC) \
+	-I$(LOCAL_INC)
 
 
 STATIC_LIBS := \
@@ -55,7 +57,6 @@ STATIC_LIBS := \
 	$(ELIB_LIB)/libelf.a \
 	$(ELIB_LIB)/libz.a \
 	$(ELIB_LIB)/libblazesym_c.a
-
 
 USER_LDFLAGS := \
 	-static \
@@ -70,19 +71,19 @@ SYSTEM_LIBS := \
 all: $(BPF_OBJ) $(TARGET)
 
 
-$(BPF_OBJ): mini_etrace.bpf.c mini_etrace.h
+$(BPF_OBJ): mini_etrace.bpf.c
 	$(CLANG) $(BPF_CFLAGS) \
 		-c $< \
 		-o $@
 
-$(TARGET): mini_etrace.c mini_etrace.h
+$(TARGET): mini_etrace.c sysdecode.c syscall_tables_generated.c
 	$(CC) $(USER_CFLAGS) \
-		$< \
+		$^ \
 		-o $@ \
 		$(USER_LDFLAGS) \
 		$(STATIC_LIBS) \
 		$(SYSTEM_LIBS)
-	$(STRIP) $(TARGET)
+	$(STRIP) $@
 
 
 install:
