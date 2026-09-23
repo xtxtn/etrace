@@ -13,7 +13,7 @@
 #define FILTER_PID  1
 #define FILTER_COMM 2
 #define FILTER_SYS  1
-#define FILTER_STACK 1
+#define ENABLE_STACK 1
 
 #define MAX_STACK_DEPTH 64
 
@@ -24,6 +24,7 @@ struct trace_config {
     __u32 filter_type;
     __u32 target_pid;
     __u32 syscall_filter_enabled;
+    __u32 print_stack_enabled;
     char target_comm[COMM_LEN];
 };
 

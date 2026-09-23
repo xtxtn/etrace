@@ -1,5 +1,7 @@
-TARGET      := mini_etrace
-BPF_OBJ     := mini_etrace.bpf.o
+BUILD_DIR := build
+
+BPF_OBJ := $(BUILD_DIR)/mini_etrace.bpf.o
+TARGET  := $(BUILD_DIR)/mini_etrace
 
 CROSS_COMPILE ?= aarch64-linux-gnu-
 CC      := $(CROSS_COMPILE)gcc
@@ -14,7 +16,7 @@ DEVICE ?=
 DST    := /data/local/tmp
 ADB_CMD := $(ADB) $(if $(DEVICE),-s $(DEVICE),)
 
-ELIB_ROOT := $(HOME)/elib/aarch64-elib
+ELIB_ROOT := aarch64-elib
 ELIB_INC  := $(ELIB_ROOT)/include
 ELIB_LIB  := $(ELIB_ROOT)/lib
 
@@ -70,13 +72,15 @@ SYSTEM_LIBS := \
 
 all: $(BPF_OBJ) $(TARGET)
 
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
-$(BPF_OBJ): mini_etrace.bpf.c
+$(BPF_OBJ): src/mini_etrace.bpf.c | $(BUILD_DIR)
 	$(CLANG) $(BPF_CFLAGS) \
 		-c $< \
 		-o $@
 
-$(TARGET): mini_etrace.c sysdecode.c syscall_tables_generated.c
+$(TARGET): src/mini_etrace.c src/sysdecode.c src/syscall_tables_generated.c
 	$(CC) $(USER_CFLAGS) \
 		$^ \
 		-o $@ \
@@ -91,5 +95,4 @@ install:
 	$(ADB_CMD) push $(TARGET) $(DST)
 
 clean:
-	rm -f $(TARGET)
-	rm -f $(BPF_OBJ)
+	rm -f $(BUILD_DIR)
