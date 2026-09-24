@@ -97,8 +97,8 @@ static void show_stack_trace(__u64 *stack, int stack_sz, pid_t pid)
 	}
 
 	if (!syms) {
-		printf("    failed to symbolize addresses: %s\n",
-		       blaze_err_str(blaze_err_last()));
+		// printf("    failed to symbolize addresses: %s\n",
+		//        blaze_err_str(blaze_err_last()));
 
 		for (i = 0; i < stack_sz; i++)
 			printf("    %016llx\n",
@@ -294,7 +294,7 @@ static void handle_event(void *ctx,
         if (e->stack_size > 0) {
     		printf("Userspace Stack:\n");
     		show_stack_trace(e->user_stack, e->stack_size / sizeof(__u64), e->pid);
-            puts();
+            puts("");
     	} else {
     		printf("No Userspace Stack\n");
     	}
